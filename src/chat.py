@@ -2,10 +2,10 @@
 Interactive Chat CLI for the AI Order Agent.
 
 Features:
-- Session Memory (MemorySaver) — Agent nhớ toàn bộ cuộc trò chuyện
-- Human-in-the-Loop — Yêu cầu xác nhận trước khi lưu đơn hàng
-- Rich Terminal UI — Giao diện đẹp, hiển thị tool calls real-time
-- Fuzzy Search — Tìm kiếm sản phẩm thông minh (chống lỗi chính tả)
+- Session Memory (MemorySaver) -- Agent nho toan bo cuoc tro chuyen
+- Human-in-the-Loop -- Yeu cau xac nhan truoc khi luu don hang
+- Rich Terminal UI -- Giao dien dep, hien thi tool calls real-time
+- Fuzzy Search -- Tim kiem san pham thong minh (chong loi chinh ta)
 
 Usage:
     python src/chat.py
@@ -23,9 +23,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
-from rich.text import Text
 
-# ── Fix import paths ──────────────────────────────────────────────
+# Fix import paths
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -40,28 +39,19 @@ from src.utils.data_store import OrderDataStore
 
 console = Console()
 
-# ── Styling constants ─────────────────────────────────────────────
-TOOL_ICONS = {
-    "list_products": "🔍",
-    "get_product_details": "📋",
-    "get_discount": "💰",
-    "calculate_order_totals": "🧮",
-    "save_order": "💾",
-}
-
 BANNER = r"""
 [bold blue]
-  ╔══════════════════════════════════════════════════════╗
-  ║   🤖  AI Order Agent — Cửa hàng Điện tử            ║
-  ║                                                      ║
-  ║   Features:                                          ║
-  ║   • 🧠 Session Memory (nhớ cả cuộc trò chuyện)      ║
-  ║   • 🛡️  Human-in-the-Loop (xác nhận trước khi lưu)  ║
-  ║   • 🔍 Fuzzy Search (chống lỗi chính tả)            ║
-  ║   • 🎨 Rich Terminal UI                              ║
-  ║                                                      ║
-  ║   Gõ 'quit' để thoát | 'reset' để xóa trí nhớ       ║
-  ╚══════════════════════════════════════════════════════╝
+  +------------------------------------------------------+
+  |   AI Order Agent -- Cua hang Dien tu                 |
+  |                                                      |
+  |   Features:                                          |
+  |   - Session Memory (nho ca cuoc tro chuyen)          |
+  |   - Human-in-the-Loop (xac nhan truoc khi luu)       |
+  |   - Fuzzy Search (chong loi chinh ta)                |
+  |   - Rich Terminal UI                                 |
+  |                                                      |
+  |   Go 'quit' de thoat | 'reset' de xoa tri nho       |
+  +------------------------------------------------------+
 [/bold blue]
 """
 
@@ -86,16 +76,15 @@ def build_chat_agent(provider: str, model_name: str | None, temperature: float):
         tools=tools,
         prompt=build_system_prompt(),
         checkpointer=memory,
-        # 🛡️ Human-in-the-Loop: Interrupt BEFORE save_order executes
+        # Human-in-the-Loop: Interrupt BEFORE tools execute
         interrupt_before=["tools"],
     )
     return agent
 
 
 def display_tool_call(tool_name: str, tool_args: dict):
-    """Pretty-print a tool call with icon and arguments."""
-    icon = TOOL_ICONS.get(tool_name, "🛠")
-    table = Table(title=f"{icon} Tool: [bold]{tool_name}[/bold]", show_header=True, border_style="dim")
+    """Pretty-print a tool call with arguments."""
+    table = Table(title=f"Tool: [bold]{tool_name}[/bold]", show_header=True, border_style="dim")
     table.add_column("Argument", style="cyan", width=20)
     table.add_column("Value", style="white")
     for key, value in tool_args.items():
@@ -108,10 +97,8 @@ def display_tool_call(tool_name: str, tool_args: dict):
 
 def display_tool_result(tool_name: str, output: str):
     """Show tool result in a compact panel."""
-    icon = TOOL_ICONS.get(tool_name, "✅")
-    # Truncate very long outputs for display
     display_output = output if len(output) < 500 else output[:497] + "..."
-    console.print(Panel(display_output, title=f"{icon} Kết quả: [bold]{tool_name}[/bold]", border_style="green", expand=False))
+    console.print(Panel(display_output, title=f"Ket qua: [bold]{tool_name}[/bold]", border_style="green", expand=False))
 
 
 def has_save_order_call(messages) -> bool:
@@ -121,8 +108,37 @@ def has_save_order_call(messages) -> bool:
             for tc in msg.tool_calls:
                 if tc["name"] == "save_order":
                     return True
-        break  # Only check the very last AI message
+        break
     return False
+
+
+def process_stream_event(event):
+    """Process a single stream event and display it."""
+    last_msg = event["messages"][-1]
+
+    if isinstance(last_msg, AIMessage) and last_msg.content:
+        if not getattr(last_msg, "tool_calls", None):
+            console.print(Panel(
+                Markdown(str(last_msg.content)),
+                title="[bold cyan]AI Assistant[/bold cyan]",
+                border_style="cyan",
+            ))
+
+    if isinstance(last_msg, AIMessage) and getattr(last_msg, "tool_calls", None):
+        for tc in last_msg.tool_calls:
+            display_tool_call(tc["name"], tc.get("args", {}))
+
+    if isinstance(last_msg, ToolMessage):
+        display_tool_result(
+            str(getattr(last_msg, "name", "tool")),
+            str(last_msg.content),
+        )
+
+
+def resume_agent(agent, config):
+    """Resume a paused agent and display results."""
+    for event in agent.stream(None, config=config, stream_mode="values"):
+        process_stream_event(event)
 
 
 def main():
@@ -135,121 +151,65 @@ def main():
 
     while True:
         try:
-            user_input = Prompt.ask("\n[bold yellow]👤 Khách hàng[/bold yellow]")
+            user_input = Prompt.ask("\n[bold yellow]Khach hang[/bold yellow]")
             stripped = user_input.strip().lower()
 
             if stripped in ("quit", "exit", "q"):
-                console.print("[dim]👋 Tạm biệt![/dim]")
+                console.print("[dim]Tam biet![/dim]")
                 break
 
             if stripped == "reset":
                 agent = build_chat_agent(args.provider, args.model, args.temperature)
                 config = {"configurable": {"thread_id": f"interactive_session_{turn_count + 1}"}}
-                console.print("[bold green]🔄 Đã xóa trí nhớ. Bắt đầu phiên mới![/bold green]")
+                console.print("[bold green]Da xoa tri nho. Bat dau phien moi![/bold green]")
                 continue
 
             if not stripped:
                 continue
 
             turn_count += 1
-            console.print("[dim]⏳ Đang suy nghĩ...[/dim]")
+            console.print("[dim]Dang suy nghi...[/dim]")
 
             # Stream events from the agent
-            events = agent.stream(
+            for event in agent.stream(
                 {"messages": [("user", user_input)]},
                 config=config,
                 stream_mode="values",
-            )
+            ):
+                process_stream_event(event)
 
-            for event in events:
-                last_msg = event["messages"][-1]
-
-                # AI responds with text
-                if isinstance(last_msg, AIMessage) and last_msg.content:
-                    if not getattr(last_msg, "tool_calls", None):
-                        console.print(Panel(
-                            Markdown(str(last_msg.content)),
-                            title="[bold cyan]🤖 AI Assistant[/bold cyan]",
-                            border_style="cyan",
-                        ))
-
-                # AI calls a tool
-                if isinstance(last_msg, AIMessage) and getattr(last_msg, "tool_calls", None):
-                    for tc in last_msg.tool_calls:
-                        display_tool_call(tc["name"], tc.get("args", {}))
-
-                # Tool returns a result
-                if isinstance(last_msg, ToolMessage):
-                    display_tool_result(
-                        str(getattr(last_msg, "name", "tool")),
-                        str(last_msg.content),
-                    )
-
-            # ─── 🛡️ Human-in-the-Loop: Check if save_order is pending ───
+            # Human-in-the-Loop: Check if save_order is pending
             state = agent.get_state(config)
-            if state.next:  # Agent is paused (interrupt_before triggered)
+            if state.next:
                 pending_messages = state.values.get("messages", [])
                 if has_save_order_call(pending_messages):
                     console.print()
                     console.print(Panel(
-                        "[bold yellow]⚠️  Agent muốn lưu đơn hàng.\n"
-                        "Bạn có đồng ý chốt đơn không?[/bold yellow]",
+                        "[bold yellow]Agent muon luu don hang.\n"
+                        "Ban co dong y chot don khong?[/bold yellow]",
                         border_style="yellow",
                     ))
-                    confirmed = Confirm.ask("[bold]Xác nhận chốt đơn?[/bold]", default=True)
+                    confirmed = Confirm.ask("[bold]Xac nhan chot don?[/bold]", default=True)
 
                     if confirmed:
-                        console.print("[dim]✅ Đã xác nhận. Đang lưu đơn hàng...[/dim]")
-                        # Resume the agent — let it execute save_order
-                        for event in agent.stream(None, config=config, stream_mode="values"):
-                            last_msg = event["messages"][-1]
-                            if isinstance(last_msg, ToolMessage):
-                                display_tool_result(
-                                    str(getattr(last_msg, "name", "tool")),
-                                    str(last_msg.content),
-                                )
-                            elif isinstance(last_msg, AIMessage) and last_msg.content and not getattr(last_msg, "tool_calls", None):
-                                console.print(Panel(
-                                    Markdown(str(last_msg.content)),
-                                    title="[bold cyan]🤖 AI Assistant[/bold cyan]",
-                                    border_style="cyan",
-                                ))
+                        console.print("[dim]Da xac nhan. Dang luu don hang...[/dim]")
+                        resume_agent(agent, config)
                     else:
-                        console.print("[bold red]❌ Đã hủy. Đơn hàng KHÔNG được lưu.[/bold red]")
-                        # Send a cancellation message to the agent
+                        console.print("[bold red]Da huy. Don hang KHONG duoc luu.[/bold red]")
                         for event in agent.stream(
-                            {"messages": [("user", "Hủy đơn hàng. Không lưu.")]},
+                            {"messages": [("user", "Huy don hang. Khong luu.")]},
                             config=config,
                             stream_mode="values",
                         ):
-                            last_msg = event["messages"][-1]
-                            if isinstance(last_msg, AIMessage) and last_msg.content and not getattr(last_msg, "tool_calls", None):
-                                console.print(Panel(
-                                    Markdown(str(last_msg.content)),
-                                    title="[bold cyan]🤖 AI Assistant[/bold cyan]",
-                                    border_style="cyan",
-                                ))
+                            process_stream_event(event)
                 else:
-                    # Non-save_order interrupt — just resume
-                    for event in agent.stream(None, config=config, stream_mode="values"):
-                        last_msg = event["messages"][-1]
-                        if isinstance(last_msg, ToolMessage):
-                            display_tool_result(
-                                str(getattr(last_msg, "name", "tool")),
-                                str(last_msg.content),
-                            )
-                        elif isinstance(last_msg, AIMessage) and last_msg.content and not getattr(last_msg, "tool_calls", None):
-                            console.print(Panel(
-                                Markdown(str(last_msg.content)),
-                                title="[bold cyan]🤖 AI Assistant[/bold cyan]",
-                                border_style="cyan",
-                            ))
+                    resume_agent(agent, config)
 
         except KeyboardInterrupt:
-            console.print("\n[dim]👋 Tạm biệt![/dim]")
+            console.print("\n[dim]Tam biet![/dim]")
             break
         except Exception as e:
-            console.print(f"[bold red]❌ Lỗi: {e}[/bold red]")
+            console.print(f"[bold red]Loi: {e}[/bold red]")
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
 

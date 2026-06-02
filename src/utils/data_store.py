@@ -54,7 +54,7 @@ class OrderDataStore:
             "webcam": "webcam",
         }
 
-    # ── Token helpers ──────────────────────────────────────────────
+    # -- Token helpers ----------------------------------------------
 
     @staticmethod
     def build_detail_token(product_ids: list[str]) -> str:
@@ -65,14 +65,14 @@ class OrderDataStore:
     def validate_detail_token(self, product_ids: list[str], detail_token: str) -> bool:
         return detail_token == self.build_detail_token(product_ids)
 
-    # ── Category normalization ─────────────────────────────────────
+    # -- Category normalization --------------------------------------
 
     def canonicalize_category(self, value: str | None) -> str | None:
         if not value:
             return None
         return self.category_aliases.get(_normalize(value), _normalize(value))
 
-    # ── 1. list_products ───────────────────────────────────────────
+    # -- 1. list_products --------------------------------------------
 
     def list_products(
         self,
@@ -161,7 +161,7 @@ class OrderDataStore:
         results.sort(key=lambda item: (-item[0], self.product_index[item[2]].unit_price, item[2]))
         return [item[-1] for item in results[:limit]]
 
-    # ── 2. get_product_details ─────────────────────────────────────
+    # -- 2. get_product_details --------------------------------------
 
     def get_product_details(self, product_ids: list[str]) -> dict:
         """Return full product info + a validation token for downstream tools."""
@@ -193,7 +193,7 @@ class OrderDataStore:
             "items": details,
         }
 
-    # ── 3. get_discount ────────────────────────────────────────────
+    # -- 3. get_discount ---------------------------------------------
 
     def get_discount(self, *, seed_hint: str, customer_tier: str = "standard") -> dict:
         """Simulate a campaign discount using deterministic hashing."""
@@ -208,7 +208,7 @@ class OrderDataStore:
             "campaign_code": f"FLASH-{int(discount_rate * 100):02d}",
         }
 
-    # ── 4. calculate_order_totals ──────────────────────────────────
+    # -- 4. calculate_order_totals -----------------------------------
 
     def calculate_order_totals(self, *, items: list[OrderLineInput], detail_token: str, discount_rate: float) -> dict:
         """Validate stock, verify token, and compute the discounted order total."""
@@ -268,7 +268,7 @@ class OrderDataStore:
             "detail_token": detail_token,
         }
 
-    # ── 5. save_order ──────────────────────────────────────────────
+    # -- 5. save_order -----------------------------------------------
 
     def save_order(
         self,
