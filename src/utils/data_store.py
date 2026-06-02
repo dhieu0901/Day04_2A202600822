@@ -84,16 +84,18 @@ class OrderDataStore:
         in_stock_only: bool = True,
         limit: int = 8,
     ) -> list[dict]:
-        """Search and filter the product catalog. Returns compact summaries."""
-        normalized_query = _normalize(query or "")
-        query_terms = [
-            term
-            for term in normalized_query.split()
-            if term and not term.isdigit() and len(term) > 1
-        ]
+        """Search and filter the product catalog. Returns compact summaries.
+
+        Supports fuzzy matching (typo-tolerant) and keyword overlap scoring
+        across product name, brand, tags, and description.
+        """
+        import difflib
+
+        query_norm = _normalize(query or "")
+        q_words = [w for w in query_norm.split() if len(w) > 1 and not w.isdigit()]
         wanted_category = self.canonicalize_category(category)
         wanted_tags = {_normalize(tag) for tag in (required_tags or []) if tag.strip()}
-        results: list[tuple[int, int, str, dict]] = []
+        results: list[tuple[float, int, str, dict]] = []
 
         for product in self.products:
             if in_stock_only and product.stock <= 0:
@@ -103,28 +105,40 @@ class OrderDataStore:
             if max_unit_price is not None and product.unit_price > max_unit_price:
                 continue
 
+            # Build searchable text blob from all product fields
             haystack = _normalize(
                 " ".join([product.name, product.brand, product.category, product.description, *product.tags])
             )
-            score = 0
+            name_norm = _normalize(product.name)
+
+            score: float = 0.0
             matched_terms: list[str] = []
 
-            for term in query_terms:
+            # Keyword overlap scoring
+            for term in q_words:
                 if term in haystack:
-                    score += 2
+                    score += 2.0
                     matched_terms.append(term)
 
+            # Fuzzy match on product name (handles typos like "azus" -> "asus")
+            if q_words:
+                fuzzy_ratio = difflib.SequenceMatcher(None, query_norm, name_norm).ratio()
+                score += fuzzy_ratio * 2.5
+
+            # Tag matching bonus
             for tag in wanted_tags:
                 if tag in haystack:
-                    score += 3
+                    score += 3.0
                     matched_terms.append(tag)
                 else:
-                    score -= 1
+                    score -= 1.0
 
+            # Category match bonus
             if wanted_category:
-                score += 3
+                score += 3.0
 
-            if query_terms and not matched_terms:
+            # Skip if query was provided but nothing matched at all
+            if q_words and not matched_terms and score < 1.0:
                 continue
 
             results.append(
